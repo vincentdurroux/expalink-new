@@ -11,7 +11,7 @@ interface AuthViewProps {
 }
 
 const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onBack }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation(); // Récupération de i18n pour la langue
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -81,9 +81,7 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onBack }) => {
       return;
     }
 
-    if (!password) { 
-      return; 
-    }
+    if (!password) return;
     
     setIsLoading(true);
     setStatusMessage(null);
@@ -96,20 +94,39 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onBack }) => {
           setIsLoading(false); 
           return; 
         }
+
+        // 1. Inscription via authService
         const { user, session, error } = await authService.signUp(email, password);
+        
         if (error) { 
           setStatusMessage({ type: 'error', text: error }); 
           setIsLoading(false); 
         } else if (user) {
+          
+          // --- APPEL DE LA EDGE FUNCTION POUR L'EMAIL ---
+          try {
+            await supabase.functions.invoke('send-welcome-email', {
+              body: { 
+                email: email.trim().toLowerCase(), 
+                full_name: email.split('@')[0], 
+                language: i18n.language.substring(0, 2) // Envoie 'fr', 'en' ou 'es'
+              },
+            });
+          } catch (funcErr) {
+            console.error("Erreur Edge Function (Email):", funcErr);
+            // On ne bloque pas l'utilisateur si l'email échoue
+          }
+          // ----------------------------------------------
+
           if (!session) { 
             setStatusMessage({ type: 'info', text: `${t('auth.signUpSuccess')} ${t('auth.confirmEmail')}` }); 
             setIsLoading(false); 
           } else { 
-            // On ne repasse PAS isLoading à false ici pour laisser le loader afficher
             onAuthSuccess(); 
           }
         }
       } else {
+        // Logique de Connexion (Signin)
         const { data: existingProfile } = await supabase
           .from('profiles')
           .select('id')
@@ -128,7 +145,6 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onBack }) => {
           setStatusMessage({ type: 'error', text: t('auth.invalidCreds') }); 
           setIsLoading(false); 
         } else { 
-          // On ne repasse PAS isLoading à false ici
           onAuthSuccess(); 
         }
       }
@@ -177,7 +193,6 @@ const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onBack }) => {
             <form className="space-y-8" onSubmit={handleAuth}>
               {step === 'email' ? (
                 <div className="space-y-8">
-                  {/* GOOGLE LOGIN FIRST */}
                   <button 
                     type="button"
                     onClick={handleGoogleLogin}
